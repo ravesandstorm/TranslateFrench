@@ -17,14 +17,6 @@ import torch.nn.functional as F
 hidden_size = 512
 MAX_LENGTH = 10
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-eng_prefixes = (
-    "i am ", "i m ",
-    "he is", "he s ",
-    "she is", "she s ",
-    "you are", "you re ",
-    "we are", "we re ",
-    "they are", "they re "
-)
 class Access(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Access, self).__init__()
@@ -36,19 +28,6 @@ class Access(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
     def forward(self, input_seq, hidden=None):
         embedded = self.embedding(input_seq)
-        '''
-        output, hidden = self.gru(embedded, hidden)
-        output = self.softmax(self.out(output))
-        return output, hidden
-        ---------------------------------------
-        # Ensure hidden state tensor has the same batch size as input tensor
-        if hidden.size(1) != input_seq.size(0):
-            hidden = hidden.repeat(1, input_seq.size(0), 1)
-        
-        output, hidden = self.gru(embedded, hidden)
-        output = self.softmax(self.out(output))
-        return output, hidden
-        '''
         # Ensure hidden state tensor is 2-D for unbatched input
         if input_seq.dim() == 1:
             hidden = hidden.squeeze(0)  # Squeeze to 2-D
@@ -113,8 +92,7 @@ def readLangs(lang1, lang2, reverse=False):
 
 def filterPair(p):
     return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+        len(p[1].split(' ')) < MAX_LENGTH
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
@@ -253,7 +231,6 @@ def asMinutes(s):
     s -= m * 60
     return '%dm %ds' % (m, s)
 
-
 def timeSince(since, percent):
     now = time.time()
     s = now - since
@@ -261,11 +238,9 @@ def timeSince(since, percent):
     rs = es - s
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
-def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
+def trainIters(encoder, decoder, n_iters, print_every=1000, learning_rate=0.01):
     start = time.time()
-    plot_losses = []
     print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
 
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
@@ -281,7 +256,6 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
-        plot_loss_total += loss
 
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
@@ -289,20 +263,6 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
             print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
                                          iter, iter / n_iters * 100, print_loss_avg))
 
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
-
-    showPlot(plot_losses)
-    
-def showPlot(points):
-    plt.figure()
-    fig, ax = plt.subplots()
-    # this locator puts ticks at regular intervals
-    loc = ticker.MultipleLocator(base=0.2)
-    ax.yaxis.set_major_locator(loc)
-    plt.plot(points)
 def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence)
@@ -356,11 +316,9 @@ if __name__ == "__main__":
     encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
     attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
     
-    #trainIters(encoder1, attn_decoder1, 50000, print_every=1000)
-    trainIters(encoder1, attn_decoder1, 50000, print_every=250)
+    trainIters(encoder1, attn_decoder1, 60000, print_every=1000)
     evaluateRandomly(encoder1, attn_decoder1)
-    #---------------------------------------------------
     model = Access(input_lang.n_words, hidden_size, output_lang.n_words)
     # Saving the model
-    torch.save(encoder1.state_dict(), 'encoder_model.pth')
-    torch.save(attn_decoder1.state_dict(), 'decoder_model.pth')
+    torch.save(encoder1.state_dict(), 'encoderweights.pth')
+    torch.save(attn_decoder1.state_dict(), 'decoderweights.pth')
